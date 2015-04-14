@@ -1,0 +1,92 @@
+#!/usr/bin/env python
+# encoding: utf-8
+
+from subprocess import Popen as run
+from subprocess import PIPE
+import os, sys, re
+import pickle
+sys.path.append(os.path.expanduser("~/bin/"))
+import xml2srt
+
+
+tmpdir=os.path.expanduser("~/tmp")
+lastflash_saved = os.path.join(tmpdir, "lastflash.flv")
+lastsrt_saved = os.path.join(tmpdir, "lastflash.srt")
+lastflash_args = os.path.join(tmpdir, "lastflash.args")
+
+#just copied from previos sh-version
+def main(argv):
+	save = False
+	save_arg = "-saved"
+	argv0 = argv.pop(0)
+	if save_arg in argv:
+		save=True
+		argv.pop(argv.index(save_arg))
+		f = open(lastflash_args, "r")
+		loadlist = pickle.load(f)
+		loadlist.extend(argv)
+		argv = loadlist
+		f.close()
+	else:
+		f = open(lastflash_args, "w")
+		pickle.dump(argv, f)
+		f.close()
+	
+	argv.insert(0, argv0)
+	print argv
+
+	if (len(argv) > 1 and re.match('http://.*\.turbofilm.tv/.*', argv[1])):
+			URL=argv.pop(1)
+			if not save:
+				xml2srt.main(["imported",URL])
+	lastflash = run(
+			'find /private/var/folders -name "FlashTmp*" \
+			2> /dev/null | \
+			xargs ls -t | head -1 ', 
+			stdout=PIPE,
+			shell=True
+				).communicate()[0].strip()
+
+	if not os.path.isdir(tmpdir):
+		os.mkdir(tmpdir, mode=755)
+	
+	if not os.access(lastsrt_saved, os.W_OK):
+		file(lastsrt_saved, 'a').close()
+		
+
+	if os.stat(lastflash).st_ctime - \
+			os.stat(lastsrt_saved).st_ctime  > 600:
+		if not save:
+		   srt = os.open( lastsrt_saved, os.O_RDWR|os.O_CREAT )
+		   os.ftruncate(srt, 0)
+		   os.close(srt)
+
+	if os.path.isfile(lastflash):
+		if not save:
+			if os.path.isfile(lastflash_saved):
+				os.remove(lastflash_saved)
+			os.link(lastflash, lastflash_saved)
+		args = "".join(a+" " for a in argv[1:])
+		args += " -sub ~/tmp/lastflash.srt"
+		print "mplayer %s %s" % (args, lastflash_saved)
+		run("mplayer %s %s" % (args, lastflash_saved), shell=True,
+				stdout=sys.stdout, stderr=sys.stdin,
+				stdin=sys.stdin).communicate()[0]
+		print "\n"
+
+
+if __name__ == '__main__':
+	main(sys.argv)
+
+"""
+lastfile=$(find /private/var/folders -name "FlashTmp*" | xargs ls -t | head -1)
+
+[ -d ~/tmp ] || mkdir -p ~/tmp/
+
+if [ -n "${lastfile}" ]; then
+	rm -f ~/tmp/lastflash.flv
+	ln -h ${lastfile} ~/tmp/lastflash.flv
+  mplayer $@ ~/tmp/lastflash.flv
+fi 
+
+"""
